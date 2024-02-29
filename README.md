@@ -3,22 +3,18 @@
 ## step1: generate a .tif file of a georeferenced map of KTH
 Follow this [video](https://www.youtube.com/watch?v=RjkZgE_WVBk)
 
-## step2: download road features from OpenStreetMap as .geojson using an API. This step takes some time.
+## step2: download road features from OpenStreetMap as .geojson using an API.
      curl --get 'https://osm.buntinglabs.com/v1/osm/extract' \
-          --data "tags=building=university" \
+          --data "tags=highway=*" \
           --data "api_key=1kduLalBD857u3" \
-          --data "bbox=18.051825,59.342298,18.086758,59.357872" \
-          -o KTH_building.geojson
+          --data "bbox=18.068134,59.347679,18.071563,59.351561" \
+          -o KTH_path_test.geojson
 
-kth building:
+<ul>
+  <li>enter your own api key</li>
+  <li>defined bounding box (Lng / Lat)</li>
+</ul>
 
-     curl --get 'https://osm.buntinglabs.com/v1/osm/extract' \
-               --data "tags=highway=residential" \
-               --data "api_key=1kduLalBD857u3" \
-               --data "bbox=18.051825,59.342298,18.086758,59.357872" \
-               -o KTH_path.geojson
- # enter your own api key
-  # defined bounding box (Lng / Lat)
 <ul>
   <li>This step needs an API from: <a href="https://buntinglabs.com/solutions/openstreetmap-extracts">Bunting Labs</a></li>
   <li>Bounding box can be found at: <a href="http://bboxfinder.com/">bboxfinder</a></li>
