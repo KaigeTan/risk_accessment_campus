@@ -19,5 +19,4 @@ Follow this [video](https://www.youtube.com/watch?v=RjkZgE_WVBk)
   <li>This step needs an API from: <a href="https://buntinglabs.com/solutions/openstreetmap-extracts">Bunting Labs</a></li>
   <li>Bounding box can be found at: <a href="http://bboxfinder.com/">bboxfinder</a></li>
   <li>Tags can be found at: <a href="https://taginfo.openstreetmap.org/">openstreetmap_tag</a></li>
-  <li>Fourth item</li>
 </ul>
