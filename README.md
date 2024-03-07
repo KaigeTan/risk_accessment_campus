@@ -3,7 +3,7 @@
 ## Generate a .tif file of a georeferenced map of KTH
 Follow this [video](https://www.youtube.com/watch?v=RjkZgE_WVBk)
 
-The generated .tif file can be found at KTH_geofig.tif
+The generated .tif file can be found at [KTH_geofig.tif](https://github.com/KaigeTan/tecosa_demo_risk_accessment/blob/main/KTH_geofig.tif)
 
 ## Download road features from OpenStreetMap as .geojson using an API.
      curl --get 'https://osm.buntinglabs.com/v1/osm/extract' \
@@ -23,4 +23,4 @@ The generated .tif file can be found at KTH_geofig.tif
   <li>Tags can be found at: <a href="https://taginfo.openstreetmap.org/">openstreetmap_tag</a></li>
 </ul>
 
-The generated .geojson file can be found at KTH_allroad.geojson
+The generated .geojson file can be found at  [KTH_allroad.geojson](https://github.com/KaigeTan/tecosa_demo_risk_accessment/blob/main/KTH_allroad.geojson)
