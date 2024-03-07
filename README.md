@@ -1,9 +1,9 @@
 # tecosa_demo_risk_accessment
 
-## step1: generate a .tif file of a georeferenced map of KTH
+## Generate a .tif file of a georeferenced map of KTH
 Follow this [video](https://www.youtube.com/watch?v=RjkZgE_WVBk)
 
-## step2: download road features from OpenStreetMap as .geojson using an API.
+## Download road features from OpenStreetMap as .geojson using an API.
      curl --get 'https://osm.buntinglabs.com/v1/osm/extract' \
           --data "tags=highway=*" \
           --data "api_key=1kduLalBD857u3" \
