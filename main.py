@@ -1,9 +1,9 @@
 from RoadNetClass import RoadNet
+from utils import time_to_collision
 
 
 road_img = 'KTH_geofig.tif'
 road_data = 'KTH_allroad.geojson'
-#road_data = 'KTH_path_test.geojson'
 
 KTHRoadNet = RoadNet(road_data, road_img)
 KTHRoadNet.trim_road()
@@ -16,11 +16,15 @@ KTHRoadNet.draw_network_fig()
 # pt3: 18.070000661082304, 59.34911730809832
 point1 = (18.070000661082304, 59.34911730809832)
 point2 = (18.07019912436768, 59.34851018180592)
+vel1 = 10
+vel2 = 5
+acc1 = 1
+acc2 = 1
 distance, path = KTHRoadNet.shortest_distance_along_roads(point1, point2)
+t_collision = time_to_collision(distance, vel1, vel2, acc1, acc2)
 
-nearest_distance1, touching_point1 = KTHRoadNet.find_nearest_distance_and_point_to_graph(point1)
-nearest_distance2, touching_point2 = KTHRoadNet.find_nearest_distance_and_point_to_graph(point2)
+if t_collision is not None:
+    print('distance is: {:.3f}, and time-to-collision is: {:.3f}'.format(distance, t_collision))
+else:
+    print("No collision possible")
 
-
-distance = touching_point1.distance(touching_point2)
-print('distance is :', distance)

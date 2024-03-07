@@ -1,11 +1,10 @@
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 import geopandas as gpd
 from shapely.geometry import Point, LineString, MultiLineString, box
 import rasterio
 import networkx as nx
 import numpy as np
-from utils import convert_point_crs, haversine_distance, filter_lines_in_bbox, is_point_crossing_segment
+from utils import convert_point_crs, filter_lines_in_bbox, is_point_crossing_segment
 
 class RoadNet:
     def __init__(self, road_data, road_img):
@@ -209,7 +208,7 @@ class RoadNet:
     
     def is_path_crossing_point(self, path, point):
         """
-        Check if the point is across a line segment defined by the path
+        Check if the point is across the path
 
         """
         for u_coords, v_coords in zip(path[:-1], path[1:]):            
