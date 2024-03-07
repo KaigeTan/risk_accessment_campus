@@ -5,7 +5,7 @@ from shapely.geometry import Point, LineString, MultiLineString, box
 import rasterio
 import networkx as nx
 import numpy as np
-from utils import convert_point_crs, haversine_distance, filter_lines_in_bbox
+from utils import convert_point_crs, haversine_distance, filter_lines_in_bbox, is_point_crossing_segment
 
 class RoadNet:
     def __init__(self, road_data, road_img):
@@ -128,52 +128,53 @@ class RoadNet:
             
     def shortest_distance_along_roads(self, point1, point2):
         """
-        Given two points, calculate the length of the shortest path
-
-        Parameters
-        ----------
-        point1 : TYPE
-            DESCRIPTION.
-        point2 : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        shortest_distance : TYPE
-            DESCRIPTION.
-
+        Given two points, calculate the shortest path and the length of the shortest path
+        
         """
         if not hasattr(self, 'G'):
             self._build_network_graph()
         
-        
-        point1_crs = convert_point_crs(point1)
-        point2_crs = convert_point_crs(point2)
+        # find the nearest touching points (nodes or points on edges) on the road network to the given points
+        distance1, touching_point1 = self.find_nearest_distance_and_point_to_graph(point1)
+        distance2, touching_point2 = self.find_nearest_distance_and_point_to_graph(point2)
         
         # Find the nearest nodes on the road network to the given points
-        nearest_node1_idx = np.argmin([point1_crs.distance(Point(node)) for node in self.G.nodes])
-        nearest_node2_idx = np.argmin([point2_crs.distance(Point(node)) for node in self.G.nodes])
-        nearest_dis1 = np.min([point1_crs.distance(Point(node)) for node in self.G.nodes])
-        nearest_dis2 = np.min([point2_crs.distance(Point(node)) for node in self.G.nodes])
+        nearest_node1_idx = np.argmin([touching_point1.distance(Point(node)) for node in self.G.nodes])
+        nearest_node2_idx = np.argmin([touching_point2.distance(Point(node)) for node in self.G.nodes])
+        nearest_dis1 = np.min([touching_point1.distance(Point(node)) for node in self.G.nodes])
+        nearest_dis2 = np.min([touching_point2.distance(Point(node)) for node in self.G.nodes])
         
         # Retrieve the corresponding node identifiers
         nearest_node1 = list(self.G.nodes())[nearest_node1_idx]
         nearest_node2 = list(self.G.nodes())[nearest_node2_idx]
-        
+        # Calculate the shortest path, node-to-node
         shortest_path = nx.shortest_path(self.G, source=nearest_node1, target=nearest_node2, weight='weight')
         shortest_distance = nx.shortest_path_length(self.G, source=nearest_node1, target=nearest_node2, weight='weight')
         
-        original_points1 = (point1_crs.geometry.x.values[0], point1_crs.geometry.y.values[0])
-        original_points2 = (point2_crs.geometry.x.values[0], point2_crs.geometry.y.values[0])
-        original_points = [original_points1, original_points2]
-        self.draw_network_fig(original_points=original_points, shortest_path=shortest_path)
+        # compensate the distance between nodes and touching points
+        if self.is_path_crossing_point(shortest_path, (touching_point1.x, touching_point1.y)):
+            shortest_distance = shortest_distance - nearest_dis1
+        else:
+            shortest_distance = shortest_distance + nearest_dis1
         
+        if self.is_path_crossing_point(shortest_path, (touching_point2.x, touching_point2.y)):
+            shortest_distance = shortest_distance - nearest_dis2
+        else:
+            shortest_distance = shortest_distance + nearest_dis2
         
+        # draw the shortest path and points on the road network
+        touch_points = [(touching_point1.x, touching_point1.y), (touching_point2.x, touching_point2.y)]
+        self.draw_network_fig(original_points=touch_points, shortest_path=shortest_path)
+
         return shortest_distance, shortest_path
 
         
+        
     def find_nearest_distance_and_point_to_graph(self, point):
+        """
+        Find the closest points in the road network to the given point
 
+        """
         if not hasattr(self, 'G'):
             self._build_network_graph()
         
@@ -203,5 +204,18 @@ class RoadNet:
             touching_point = Point(touching_point['geometry'].iloc[0].x, touching_point['geometry'].iloc[0].y)
         
         return nearest_distance, touching_point
+    
+    
+    
+    def is_path_crossing_point(self, path, point):
+        """
+        Check if the point is across a line segment defined by the path
+
+        """
+        for u_coords, v_coords in zip(path[:-1], path[1:]):            
+            if is_point_crossing_segment(point, u_coords, v_coords):
+                return True
+        return False
+    
     
     

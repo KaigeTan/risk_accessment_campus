@@ -74,3 +74,18 @@ def filter_lines_in_bbox(multilinestring, bbox_polygon):
     return MultiLineString(filtered_lines)
 
 
+
+def is_point_crossing_segment(point, segment_start, segment_end):
+    # Calculate vectors representing the line segment and the point to segment_start
+    vec_segment = (segment_end[0] - segment_start[0], segment_end[1] - segment_start[1])
+    vec_point_to_start = (segment_start[0] - point[0], segment_start[1] - point[1])
+
+    # Calculate the cross product
+    cross_product = vec_segment[0] * vec_point_to_start[1] - vec_segment[1] * vec_point_to_start[0]
+
+    # If the cross product is zero and the dot product is negative, the point is on the line segment
+    if abs(cross_product) < 1e-10:
+        dot_product = vec_segment[0] * vec_point_to_start[0] + vec_segment[1] * vec_point_to_start[1]
+        if dot_product < 0:
+            return True
+    return False
