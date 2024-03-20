@@ -1,6 +1,7 @@
 import geopandas as gpd
 from shapely.geometry import Point, MultiLineString
 import math
+from pyproj import Proj, transform
 
 def convert_point_crs(point, target_crs='EPSG:3854'):
     """
@@ -77,7 +78,7 @@ def is_point_crossing_segment(point, segment_start, segment_end):
     cross_product = vec_segment[0] * vec_point_to_start[1] - vec_segment[1] * vec_point_to_start[0]
 
     # If the cross product is zero and the dot product is negative, the point is on the line segment
-    if abs(cross_product) < 1e-10:
+    if abs(cross_product) < 0.05:
         dot_product = vec_segment[0] * vec_point_to_start[0] + vec_segment[1] * vec_point_to_start[1]
         if dot_product < 0:
             return True
@@ -125,3 +126,21 @@ def time_to_collision(distance, vel_a, vel_b, acc_a=0, acc_b=0):
         time_to_collision = None  # Negative time, no collision possible
 
     return time_to_collision
+
+
+
+# Define a function to map values to colors
+def value_to_color(value):
+    """
+    
+    """
+    # Normalize the value to range [0, 1]
+    normalized_value = (value - 0) / (40 - 0)
+    
+    # Use the normalized value to interpolate between red and green
+    red = 1 - normalized_value
+    green = normalized_value
+    blue = 0  # No blue component
+    
+    # Return the color as an RGB tuple
+    return (red, green, blue)

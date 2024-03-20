@@ -4,7 +4,7 @@ from shapely.geometry import Point, LineString, MultiLineString, box
 import rasterio
 import networkx as nx
 import numpy as np
-from utils import convert_point_crs, filter_lines_in_bbox, is_point_crossing_segment
+from utils import convert_point_crs, filter_lines_in_bbox, is_point_crossing_segment, time_to_collision, value_to_color
 
 class RoadNet:
     def __init__(self, road_data, road_img):
@@ -21,6 +21,7 @@ class RoadNet:
     def trim_road(self, min_x=18.0655, min_y=59.3475, max_x=18.0715, max_y=59.354):
         """
         Trim the road network based on the defined ROI.
+        
         """
         # roi coordinates
         self.min_x = min_x
@@ -47,7 +48,8 @@ class RoadNet:
         
         """
         # Read the region of interest from the raster image
-        window = rasterio.windows.from_bounds(self.min_x, self.min_y, self.max_x, self.max_y, self.image.transform)
+        window = rasterio.windows.from_bounds(self.min_x, self.min_y, self.max_x, self.max_y, 
+                                              self.image.transform)
         roi = self.image.read(window=window)
 
         # Plot the ROI
@@ -63,15 +65,16 @@ class RoadNet:
     
     
     
-    def draw_network_fig(self, original_points=None, shortest_path=None):
+    def draw_network_fig(self, original_points=None, shortest_path=None, generated_points=None, color=None):
         """
-        Draw the KTH graph network with nodes and edges, optionally highlighting the shortest path between original_points.
-    
+        Draw the KTH graph network with nodes and edges, and also visualize generated points.
+        
         Parameters:
             original_points (list of tuples): List of original points to be drawn. 
                             Each point should be a tuple of (x, y) coordinates. Default is None.
             shortest_path (list): List of nodes representing the shortest path. Default is None.
-
+            generated_points (list of tuples): List of generated points to be drawn.
+                            Each point should be a tuple of (x, y) coordinates. Default is None.
         """
         positions = {n: [n[0], n[1]] for n in self.G.nodes}
         
@@ -80,21 +83,47 @@ class RoadNet:
         # Draw the network without highlighting the shortest path
         nx.draw_networkx(self.G, positions, with_labels=False, node_size=20, ax=ax)
         
-        # # Get edge labels (weights)
-        # edge_labels = nx.get_edge_attributes(self.G, 'weight')
-        # formatted_edge_labels = {edge: f'{label:.3f}' for edge, label in edge_labels.items()}
-        # # Draw edge labels
-        # nx.draw_networkx_edge_labels(self.G, positions, edge_labels=formatted_edge_labels, ax=ax)
-        
         # Highlight the shortest path, if provided
         if shortest_path:
-            shortest_path_edges = [(shortest_path[i], shortest_path[i+1]) for i in range(len(shortest_path)-1)]
-            nx.draw_networkx_edges(self.G, positions, edgelist=shortest_path_edges, edge_color='g', width=3, ax=ax)
-    
-        # Draw the original points, if provided
+            # Define an empty list to store nodes where line segments do not cross original points
+            valid_nodes = []
+            
+            # Iterate over each pair of nodes in the shortest path
+            for i in range(len(shortest_path) - 1):
+                # Get the current node and the next node in the path
+                current_node = shortest_path[i]
+                next_node = shortest_path[i + 1]
+                edge = [current_node, next_node]
+                
+                # Draw the edge between the current node and the next node
+                if not any(self.is_path_crossing_point(edge, pt) for pt in original_points): # check if line segment cross the points
+                    nx.draw_networkx_edges(self.G, positions, edgelist=[(current_node, next_node)], edge_color=color, width=3, ax=ax)
+                    valid_nodes.append(current_node)
+                # else:
+                #     crossing_point = next(pt for pt in original_points if self.is_path_crossing_point(edge, pt))
+                #     next_node_coords = positions[next_node]
+                #     ax.plot([crossing_point[0], next_node_coords[0]], [crossing_point[1], next_node_coords[1]], color='g', linewidth=3)
+            
+            # TODO: double check this part
+            # Find the closest node to the original points among the valid nodes
+            closest_node1 = min(valid_nodes, key=lambda node: Point(node).distance(Point(original_points[0])))
+            closest_node2 = min(valid_nodes, key=lambda node: Point(node).distance(Point(original_points[1])))
+            ax.plot([original_points[0][0], closest_node1[0]], [original_points[0][1], closest_node1[1]], color=color, linewidth=3)
+            ax.plot([original_points[1][0], closest_node2[0]], [original_points[1][1], closest_node2[1]], color=color, linewidth=3)
+            
+            
+        # TODO: Draw the original points, if provided
+        box_marker = 's'
+        
         if original_points:
             x, y = zip(*original_points)
-            ax.scatter(x, y, color='r', marker='x', label='Original Points')
+            ax.scatter(x, y, marker=box_marker, color='grey', s=75, label='Car')
+            # ax.scatter(x, y, color='r', marker=(car_marker, 0), label='Car')
+        
+        # Draw the generated points, if provided
+        if generated_points:
+            x_gen, y_gen = zip(*generated_points)
+            ax.scatter(x_gen, y_gen, color='b', marker='o', label='Generated Points')
         
         # Set x-axis formatter to display in 10e3 format
         ax.xaxis.set_visible(False)
@@ -102,7 +131,10 @@ class RoadNet:
         ax.tick_params(left=True, bottom=True, labelleft=True, labelbottom=True)
         plt.title("KTH graph network with nodes and edges")
         plt.ylabel('in CRS units [m]')
+        # Save the plot as an image
+        # plt.savefig(f'image_{edge}.png')
         plt.show()
+    
     
     
     def _build_network_graph(self):
@@ -125,7 +157,7 @@ class RoadNet:
         
         
             
-    def shortest_distance_along_roads(self, point1, point2):
+    def shortest_distance_along_roads(self, point1, point2, is_crs, is_draw):
         """
         Given two points, calculate the shortest path and the length of the shortest path
         
@@ -134,8 +166,8 @@ class RoadNet:
             self._build_network_graph()
         
         # find the nearest touching points (nodes or points on edges) on the road network to the given points
-        distance1, touching_point1 = self.find_nearest_distance_and_point_to_graph(point1)
-        distance2, touching_point2 = self.find_nearest_distance_and_point_to_graph(point2)
+        distance1, touching_point1 = self.find_nearest_distance_and_point_to_graph(point1, is_crs)
+        distance2, touching_point2 = self.find_nearest_distance_and_point_to_graph(point2, is_crs)
         
         # Find the nearest nodes on the road network to the given points
         nearest_node1_idx = np.argmin([touching_point1.distance(Point(node)) for node in self.G.nodes])
@@ -161,15 +193,26 @@ class RoadNet:
         else:
             shortest_distance = shortest_distance + nearest_dis2
         
+        # TODO: revise this part
+        vel1 = 12
+        vel2 = 8
+        acc1 = 0
+        acc2 = 0
+        t_collision = time_to_collision(shortest_distance, vel1, vel2, acc1, acc2)
+        # print(t_collision)
+        line_color = value_to_color(t_collision)
+        
         # draw the shortest path and points on the road network
         touch_points = [(touching_point1.x, touching_point1.y), (touching_point2.x, touching_point2.y)]
-        self.draw_network_fig(original_points=touch_points, shortest_path=shortest_path)
+        if is_draw:
+            self.draw_network_fig(original_points=touch_points, shortest_path=shortest_path, color=line_color)
+        
 
         return shortest_distance, shortest_path
 
         
         
-    def find_nearest_distance_and_point_to_graph(self, point):
+    def find_nearest_distance_and_point_to_graph(self, point, is_crs):
         """
         Find the closest points in the road network to the given point
 
@@ -177,8 +220,10 @@ class RoadNet:
         if not hasattr(self, 'G'):
             self._build_network_graph()
         
-        
-        point_crs = convert_point_crs(point)
+        if is_crs:
+            point_crs = point
+        else:
+            point_crs = convert_point_crs(point)
         
         # Initialize variables for storing nearest distance and touching point
         nearest_distance = np.inf
@@ -199,8 +244,11 @@ class RoadNet:
                 touching_point = edge.interpolate(edge.project(point_crs))
         
         # if touching_point is a GeoDataFrame, convert it to a point
-        if not isinstance(touching_point, tuple):
-            touching_point = Point(touching_point['geometry'].iloc[0].x, touching_point['geometry'].iloc[0].y)
+        if not isinstance(touching_point, Point):
+            if isinstance(touching_point, tuple):
+                touching_point = Point(touching_point)
+            else:
+                touching_point = Point(touching_point['geometry'].iloc[0].x, touching_point['geometry'].iloc[0].y)
         
         return nearest_distance, touching_point
     
@@ -218,3 +266,77 @@ class RoadNet:
     
     
     
+    def generate_points_along_path(self, pt1, pt2):
+        """
+        Generate points evenly distributed along the shortest path between two nodes with a point every meter.
+    
+        Parameters:
+            pt1 (tuple): The coordinates of the starting point as a tuple (x, y).
+            pt2 (tuple): The coordinates of the ending point as a tuple (x, y).
+    
+        Returns:
+            list: A list of generated points as (x, y) tuples.
+        """
+        points = []
+        distance, path = self.shortest_distance_along_roads(pt1, pt2, is_crs=0, is_draw=0)
+        num_points = max(round(distance), 1)  # Ensure at least 1 point
+        
+        if len(path) > 1:
+            for i in range(len(path) - 1):
+                segment_length = self.G[path[i]][path[i + 1]]['weight']
+                num_segment_points = round(segment_length)  # Points every meter
+                
+                # Distribute points along the segment at regular intervals
+                segment_points = np.linspace(0, segment_length, num_segment_points)
+                for t in segment_points:
+                    # Interpolate between node coordinates based on the distance
+                    x = (1 - t / segment_length) * path[i][0] + (t / segment_length) * path[i + 1][0]
+                    y = (1 - t / segment_length) * path[i][1] + (t / segment_length) * path[i + 1][1]
+                    points.append((x, y))
+        
+        # Plot the generated points
+        # self.draw_network_fig(generated_points=points)
+        
+        return points
+    
+    
+    
+    def calculate_distances_and_ttcs(self, pts_trace1, pts_trace2, vel1, vel2, acc1, acc2):
+        """
+        Calculate distances, paths, and time-to-collision (TTC) between pairs of points in pts_trace1 and pts_trace2.
+    
+        Parameters:
+            pts_trace1 (list of tuples): List of points for trace 1.
+            pts_trace2 (list of tuples): List of points for trace 2.
+            vel1 (float): Velocity for trace 1.
+            vel2 (float): Velocity for trace 2.
+            acc1 (float): Acceleration for trace 1.
+            acc2 (float): Acceleration for trace 2.
+    
+        Returns:
+            list of tuples: List of tuples containing distances, paths, and time-to-collision (TTC) for each pair of points.
+        """
+
+        # Sample points along the traces at specified density
+        sampled_pts_trace1 = pts_trace1[::vel1]
+        sampled_pts_trace2 = pts_trace2[::vel2]
+        # Initialize list to store results for each pair of points
+        results = []
+    
+        # Iterate over each pair of points in pts_trace1 and pts_trace2
+        for pt1, pt2 in zip(sampled_pts_trace1, sampled_pts_trace2):
+            gdf_pt1 = gpd.GeoDataFrame(geometry=[Point(pt1)], crs='EPSG:3854')
+            gdf_pt2 = gpd.GeoDataFrame(geometry=[Point(pt2)], crs='EPSG:3854')
+            
+            # Calculate distance and path between the current pair of points
+            distance, _ = self.shortest_distance_along_roads(gdf_pt1, gdf_pt2, is_crs=1, is_draw=1)
+            
+            # Calculate time-to-collision using the calculated distance and provided velocities and accelerations
+            t_collision = time_to_collision(distance, vel1, vel2, acc1, acc2)
+            
+            # Append the results to the list
+            results.append((pt1, pt2, distance, t_collision))
+    
+        return results
+
+
