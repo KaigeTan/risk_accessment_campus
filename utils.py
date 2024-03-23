@@ -1,4 +1,5 @@
 import geopandas as gpd
+import matplotlib.colors as mcolors
 from shapely.geometry import Point, MultiLineString
 import math
 from pyproj import Proj, transform
@@ -129,18 +130,43 @@ def time_to_collision(distance, vel_a, vel_b, acc_a=0, acc_b=0):
 
 
 
-# Define a function to map values to colors
 def value_to_color(value):
     """
-    
+    Convert a numerical value (TTC) to a corresponding RGB color.
+
+    Parameters:
+        value (float): The numerical value to be converted.
+
+    Returns:
+        tuple: A tuple representing the RGB color corresponding to the value.
     """
-    # Normalize the value to range [0, 1]
-    normalized_value = (value - 0) / (40 - 0)
+    if value >= 15:
+        return (0, 1, 0)  # Bright green
     
-    # Use the normalized value to interpolate between red and green
-    red = 1 - normalized_value
-    green = normalized_value
-    blue = 0  # No blue component
+    # Define the colors for the gradient (red to yellow to green)
+    red = (1, 0, 0)  # Bright red
+    yellow = (1, 1, 0)  # Yellow
+    green = (0, 1, 0)  # Bright green
     
-    # Return the color as an RGB tuple
-    return (red, green, blue)
+    # Normalize the value to range [0, 1] for values below 10
+    normalized_value = value / 15
+    
+    # Interpolate between red and yellow (0 to 5)
+    if normalized_value <= 0.5:
+        # Calculate the interpolation factor
+        factor = normalized_value / 0.5
+        # Interpolate between red and yellow
+        color = (red[0] * (1 - factor) + yellow[0] * factor,
+                 red[1] * (1 - factor) + yellow[1] * factor,
+                 red[2] * (1 - factor) + yellow[2] * factor)
+    # Interpolate between yellow and green (5 to 10)
+    else:
+        # Calculate the interpolation factor
+        factor = (normalized_value - 0.5) / 0.5
+        # Interpolate between yellow and green
+        color = (yellow[0] * (1 - factor) + green[0] * factor,
+                 yellow[1] * (1 - factor) + green[1] * factor,
+                 yellow[2] * (1 - factor) + green[2] * factor)
+    
+    return color
+
