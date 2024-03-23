@@ -4,7 +4,8 @@ from shapely.geometry import Point, LineString, MultiLineString, box
 import rasterio
 import networkx as nx
 import numpy as np
-from utils import convert_point_crs, filter_lines_in_bbox, is_point_crossing_segment, time_to_collision, value_to_color
+from typing import List, Tuple
+from utils import convert_point_crs, filter_lines_in_bbox, is_point_crossing_segment, time_to_collision, value_to_color, on_same_line
 
 class RoadNet:
     def __init__(self, road_data, road_img=None):
@@ -13,7 +14,8 @@ class RoadNet:
         # in KTH campus, our case only consider unclassified type and residential type (check on OpenStreetMap)
         roads = roads[roads['highway'].isin(['unclassified', 'residential'])]
         # Read the .tif file
-        self.image = rasterio.open(road_img)
+        if not road_img == None:
+            self.image = rasterio.open(road_img)
         self.roads = roads[(roads.geometry.type == 'MultiLineString')] # only care about lines
         self.image_cnt = 0
         
@@ -22,6 +24,8 @@ class RoadNet:
         # build the road network
         self._build_network_graph()
         
+        self.prev_pt1 = None  # Initialize prev_pt1 with None
+        self.prev_pt2 = None  # Initialize prev_pt2 with None
         
     def trim_road(self, min_x=18.0655, min_y=59.3475, max_x=18.0715, max_y=59.354):
         """
@@ -193,16 +197,25 @@ class RoadNet:
         shortest_path = nx.shortest_path(self.G, source=nearest_node1, target=nearest_node2, weight='weight')
         shortest_distance = nx.shortest_path_length(self.G, source=nearest_node1, target=nearest_node2, weight='weight')
         
-        # compensate the distance between nodes and touching points
-        if self.is_path_crossing_point(shortest_path, (touching_point1.x, touching_point1.y)):
-            shortest_distance = shortest_distance - nearest_dis1
+        if nearest_node1 == nearest_node2:
+            # if two points are adjacent to the same node, (i.e., shortest path only has one node),
+            # check if the points are on the same line, if so, distance is the Euclidean distance, 
+            # o.w., distance is the sum of their distances to the node.
+            if on_same_line((touching_point1.x, touching_point1.y), (touching_point2.x, touching_point2.y), nearest_node1):
+                shortest_distance = np.sqrt((touching_point1.x-touching_point2.x)**2 + (touching_point1.y-touching_point2.y)**2)
+            else:
+                shortest_distance = nearest_dis1 + nearest_dis2
         else:
-            shortest_distance = shortest_distance + nearest_dis1
-        
-        if self.is_path_crossing_point(shortest_path, (touching_point2.x, touching_point2.y)):
-            shortest_distance = shortest_distance - nearest_dis2
-        else:
-            shortest_distance = shortest_distance + nearest_dis2
+            # compensate the distance between nodes and touching points
+            if self.is_path_crossing_point(shortest_path, (touching_point1.x, touching_point1.y)):
+                shortest_distance = shortest_distance - nearest_dis1
+            else:
+                shortest_distance = shortest_distance + nearest_dis1
+            
+            if self.is_path_crossing_point(shortest_path, (touching_point2.x, touching_point2.y)):
+                shortest_distance = shortest_distance - nearest_dis2
+            else:
+                shortest_distance = shortest_distance + nearest_dis2
         
         return shortest_distance, shortest_path, touching_point1, touching_point2
 
@@ -325,7 +338,7 @@ class RoadNet:
             gdf_pt2 = gpd.GeoDataFrame(geometry=[Point(pt2)], crs='EPSG:3854')
             
             # Calculate distance and path between the current pair of points
-            distance, shortest_path, touch_pt1, touch_pt2 = self.shortest_distance_along_roads(gdf_pt1, gdf_pt2, is_crs=1) # TODO: revise is draw
+            distance, shortest_path, touch_pt1, touch_pt2 = self.shortest_distance_along_roads(gdf_pt1, gdf_pt2, is_crs=1)
             
             # Calculate time-to-collision using the calculated distance and provided velocities and accelerations
             t_collision = time_to_collision(distance, vel1, vel2, acc1, acc2)
@@ -342,29 +355,49 @@ class RoadNet:
         return results
 
 
-    def risk_access(self, point1, point2, prev_point1, prev_point2, case, is_crs=0, is_draw=0):
+
+    def risk_access(self, point1: List[float], point2: List[float], case: str, is_crs: int = 0) -> Tuple[float, float]:
+        """
+        Assesses the risk of collision between two vehicles.
+
+        Parameters:
+        point1, point2: Lists representing the (position_x, position_y, time/speed) of the vehicles.
+        case: String specifying the mode of risk assessment. Should be either 'with_time' or 'with_spd'.
+        is_crs: Flag indicating whether the coordinate system is in crs.
+
+        Returns:
+        Tuple containing the shortest distance between the vehicles and the time to collision.
+        
         """
         
-        
-        """
-        
+        # if only receive time stamp, calculate the speed
         if case == 'with_time':
+            # initialization, the first time receive the vehicle message, return a default value for distance and ttc.
+            if not isinstance(self.prev_pt1, list):  # Check if prev_pt1 is not already a list
+                self.prev_pt1 = point1
+                self.prev_pt2 = point2
+                return 100, 100
             # estimate the speed of two vehicles
-            dis1, _, _, _ = self.shortest_distance_along_roads(prev_point1[0], point1[0])
-            spd1 = dis1/(point1[1] - prev_point1[1])
-            dis2, _, _, _ = self.shortest_distance_along_roads(prev_point2[0], point2[0])
-            spd2 = dis2/(point2[1] - prev_point2[1])
-        elif case == 'with_spd':
-            spd1 = point1[1]
-            spd2 = point2[1]
+            # TODO: check how to add the direction info.
+            dis1, _, _, _ = self.shortest_distance_along_roads(self.prev_pt1[:-1], point1[:-1], is_crs=0)
+            spd1 = 10 if point1[-1] - self.prev_pt1[-1] == 0 else dis1 / (point1[-1] - self.prev_pt1[-1])
+            dis2, _, _, _ = self.shortest_distance_along_roads(self.prev_pt2[:-1], point2[:-1], is_crs=0)
+            spd2 = 10 if point2[-1] - self.prev_pt2[-1] == 0 else dis2 / (point2[-1] - self.prev_pt2[-1])
+        elif case == 'with_speed':
+            spd1 = point1[-1]
+            spd2 = point2[-1]
         else:
-            print('error!')
+            raise ValueError("Invalid case argument. Must be 'with_time' or 'with_spd'.")
         
         # calculate the distance between two vehicles
-        shortest_distance, shortest_path = self.shortest_distance_along_roads(point1[0], point2[0])
-        
-        # TODO: revise this part, right now direction judgement
+        shortest_distance, _, _, _ = self.shortest_distance_along_roads(point1[:-1], point2[:-1], is_crs=0)
         t_collision = time_to_collision(shortest_distance, spd1, spd2)
-        # print(t_collision)
+        
+        # update the previous points
+        if case == 'with_time':
+            self.prev_pt1 = point1
+            self.prev_pt2 = point2
         
         return shortest_distance, t_collision
+    
+    

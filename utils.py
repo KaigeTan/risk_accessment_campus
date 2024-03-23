@@ -21,7 +21,7 @@ def convert_point_crs(point, target_crs='EPSG:3854'):
         
     """
     # Convert tuple to Point if necessary
-    if isinstance(point, tuple):
+    if isinstance(point, tuple) or isinstance(point, list):
         point = Point(point)
 
     # Create a GeoDataFrame with the point
@@ -170,3 +170,36 @@ def value_to_color(value):
     
     return color
 
+
+
+def on_same_line(point1, point2, point3):
+    """
+    Check if three points are collinear (lie on the same line).
+
+    Args:
+    point1, point2, point3: Tuples representing the (x, y) coordinates of the points.
+
+    Returns:
+    True if the points are collinear, False otherwise.
+    """
+    
+    # If two points have the same coordinates, they are collinear by default
+    if point1 == point2 or point2 == point3 or point1 == point3:
+        return True
+    
+    x1, y1 = point1
+    x2, y2 = point2
+    x3, y3 = point3
+
+    # Using the formula for slope of a line: (y2 - y1) / (x2 - x1)
+    # If the slopes of the lines connecting any two pairs of points are equal, the points are collinear.
+    # Avoiding division by zero by checking if the denominators are not equal.
+    if (x2 - x1) != 0 and (x3 - x2) != 0:
+        slope1 = (y2 - y1) / (x2 - x1)
+        slope2 = (y3 - y2) / (x3 - x2)
+        return slope1 == slope2
+    # If two of the points have the same x-coordinate, they must be collinear with the third point.
+    elif (x2 - x1) == 0 and (x3 - x2) == 0:
+        return True
+    else:
+        return False
